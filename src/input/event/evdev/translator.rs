@@ -504,7 +504,24 @@ impl EventTranslator {
         const IMU_SCALE: f64 = 0.01;
 
         match value_type {
-            ValueType::Button => normalize_unsigned_value(raw_value, info.minimum(), info.maximum()),
+            ValueType::Button => {
+                // For signed-range axes used as buttons (e.g. ABS_HAT0Y with
+                // range -1..1 for a dpad's up/down), `normalize_unsigned_value`
+                // computes `(raw - min) / (max - min)`, which maps the negative
+                // endpoint to 0.0 — defeating the `abs() > 0.5` press threshold
+                // in `get_input_value`. The source-side `axis_direction` filter
+                // (translator.rs) has already rejected wrong-sign events, so
+                // any non-zero raw value here is a genuine press.
+                //
+                // Unsigned-range axis-as-button (e.g. analog trigger mapped as
+                // button) keeps the post-c3d535b behavior: properly normalize
+                // and let the threshold decide.
+                if info.minimum() < 0 {
+                    if raw_value != 0 { 1.0 } else { 0.0 }
+                } else {
+                    normalize_unsigned_value(raw_value, info.minimum(), info.maximum())
+                }
+            }
             ValueType::Trigger => normalize_unsigned_value(raw_value, info.minimum(), info.maximum()),
             ValueType::JoystickX | ValueType::JoystickY => {
                 normalize_signed_value(raw_value, info.minimum(), info.maximum())
